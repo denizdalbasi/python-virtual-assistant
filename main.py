@@ -10,14 +10,14 @@ import wikipedia
 import requests
 import threading
 import tkinter as tk
+from JarvisHud import *
 
-
-# Monkey patch setup
 sys.modules["pyaudio"] = pyaudio
 
 wikipedia.set_user_agent("MyJarvisAssistant/1.0 (contact: denizdalbasi@gmail.com)")
 
-# Global pointer for cross-thread UI updates
+
+
 hud_ui = None
 
 def get_stored_name():
@@ -88,7 +88,7 @@ def tellTime():
     print("Listening for confirmation (Yes/No)...")
     
     response = takeCommand()
-    if any(word in response for word in ["yes", "sure", "yeah", "yup"]):
+    if any(word in response for word in ["yes", "sure", "yeah", "yup", "yes please"]):
         current_date = now.strftime("%B %d, %Y")
         speak(f"Today's date is {current_date}")
         print(f"Date given: {current_date}")
@@ -145,9 +145,8 @@ def Take_query():
 
         elif "bye" in query or "exit" in query:
             speak("Good Bye. I hope I was able to help, I will be waiting for you here")
-            os._exit(0) # Shuts down window interface cleanly on close
+            os._exit(0) 
 
-        # Wikipedia checking block
         elif any(keyword in query for keyword in ["wikipedia", "search for", "who is", "what is"]):
             speak("Checking Wikipedia...")
             search_query = query
@@ -198,36 +197,24 @@ def Take_query():
             continue
 
         elif "days left until" in query or "how many days until" in query:
-            # 1. Clean up query to find the target date string
-            # Example: "how many days left until october 9th" -> "october 9th"
             date_part = query.split("until")[-1].strip("?,.! ")
-            # Remove ordinals like 'th', 'rd', 'st' so python can parse it safely
             for ordinal in ["th", "st", "nd", "rd"]:
                 date_part = date_part.replace(ordinal, "")
                 
             try:
-                # 2. Parse the spoken date (assumes current year 2026)
                 now = datetime.datetime.now()
-                # Adding the year explicitly helps parsing phrases like "october 9"
                 target_date_str = f"{date_part} {now.year}"
-                
-                # Convert string to a datetime object
-                # %B matches full month name (October), %d matches day (9)
                 target_date = datetime.datetime.strptime(target_date_str, "%B %d %Y")
                 
-                # If the date picked has already passed this year, look toward next year
                 if target_date < now:
                     target_date = target_date.replace(year=now.year + 1)
                 
-                # 3. Calculate the difference
                 time_difference = target_date - now
                 days_left = time_difference.days
-                # Total remaining hours
                 hours_left = int(time_difference.total_seconds() / 3600)
                 
-                # 4. Speak slowly
                 engine = pyttsx3.init()
-                engine.setProperty("rate", 150) # Drop speed to 125 WPM
+                engine.setProperty("rate", 150) 
                 voices = engine.getProperty("voices")
                 engine.setProperty("voice", voices[0].id)
                 
@@ -247,6 +234,239 @@ def Take_query():
             response = f"I am doing excellent, {name}! Thank you for asking. How can I assist you?"
             print(response)
             speak(response)
+            continue
+        
+        elif "delete all notes" in query or "clear my tasks" in query or "delete my tasks" in query:
+            if os.path.exists("notes.txt"):
+                speak("Are you certain you want to permanently erase all logged notes, sir?")
+                print("Listening for confirmation (Yes/No)...")
+                
+                
+                confirmation = takeCommand()
+                if any(word in confirmation for word in ["yes please", "sure", "yeah", "yup", "do it"]):
+                    try:
+                        os.remove("notes.txt")
+                        print("notes.txt successfully deleted.")
+                        speak("Data purged. All local logs have been deleted, sir.")
+                    except Exception as e:
+                        speak("I couldn't delete the file. It might be open in another program.")
+                        print(f"File Delete Error: {e}")
+                else:
+                    speak("Purge aborted. Your notes remain intact, sir.")
+            else:
+                speak("There are no notes on file to delete, sir.")
+            continue
+
+        elif "delete the last note" in query or "remove last entry" in query:
+            if os.path.exists("notes.txt"):
+                try:
+                    with open("notes.txt", "r") as f:
+                        lines = f.readlines()
+                    
+                    if not lines:
+                        speak("The log file is already empty, sir.")
+                    else:
+                        removed_line = lines.pop() 
+
+                        with open("notes.txt", "w") as f:
+                            f.writelines(lines)
+                        
+                        clean_removed = removed_line.split("]")[-1].strip()
+                        print(f"Removed line: {clean_removed}")
+                        speak(f"Understood. I have removed the last entry, which read: {clean_removed}")
+                except Exception as e:
+                    speak("An error occurred while modifying the log file.")
+                    print(f"Delete Last Note Error: {e}")
+            else:
+                speak("No note file found on this local drive, sir.")
+            continue
+
+        elif "take a note" in query or "log this" in query or "add a task" in query:
+
+            initial_note = query.replace("take a note", "").replace("log this", "").replace("add a task", "").strip("?,.! ")
+            
+            note_lines = []
+            if initial_note:
+                note_lines.append(initial_note.capitalize())
+            else:
+                speak("Mainframe log open. What is the first entry, sir?")
+                first_line = takeCommand().strip("?,.! ")
+                if first_line != "none" and first_line:
+                    note_lines.append(first_line.capitalize())
+
+            if note_lines:
+                while True:
+                    speak("Would you like to add another line to this note?")
+                    print("Listening for confirmation (Yes/No)...")
+                    
+                    response = takeCommand()
+                    if any(word in response for word in ["yes", "sure", "yeah", "yup", "add"]):
+                        speak("Go ahead, sir.")
+                        next_line = takeCommand().strip("?,.! ")
+                        if next_line != "none" and next_line:
+                            note_lines.append(next_line.capitalize())
+                    else:
+                        break
+
+                final_note_content = " ".join(note_lines)
+                
+                try:
+                    with open("notes.txt", "a") as f:
+                        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+                        f.write(f"[{timestamp}] {final_note_content}\n")
+                    
+                    print(f"Successfully Logged: {final_note_content}")
+                    speak("Complete note committed to mainframe logs, sir.")
+                except Exception as e:
+                    speak("I encountered an issue saving the file.")
+                    print(f"Note-taking Error: {e}")
+            else:
+                speak("Note logging canceled.")
+            continue
+
+        elif any(phrase in query for phrase in ["thank you", "thanks jarvis", "appreciate it"]):
+            name = get_stored_name()
+            responses = [
+                f"Always a pleasure assisting you, {name}.",
+                f"At your service, {name}. Anything else for the mainframe grid?",
+                f"Just doing my job, {name}. Happy to help."
+            ]
+            import random
+            chosen_response = random.choice(responses)
+            
+            print(chosen_response)
+            speak(chosen_response)
+            continue
+        elif any(phrase in query for phrase in ["windows model", "operational stats", "os specifications"]):
+            import platform
+            import ctypes
+            
+            try:
+                os_name = platform.system()         
+                os_release = platform.release()    
+                os_version = platform.version()    
+                architecture = platform.machine()   
+                
+                is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+                privilege_status = "Elevated Core Administrator" if is_admin else "Standard User Mode"
+                
+                report = (
+                    f"Accessing OS kernel, Sir. This unit is running {os_name} {os_release}, "
+                    f"build version {os_version}, utilizing an {architecture} architecture. "
+                    f"Current runtime execution environment is flagged as {privilege_status}."
+                )
+                
+                print(f"\n[SYSTEM DIAGNOSTICS]\n{report}\n")
+                speak(report)
+                
+            except Exception as e:
+                speak("I encountered an issue compiling the operational environment model data.")
+                print(f"OS Diagnostic Error: {e}")
+            continue
+
+        elif "open folder" in query or "open directory" in query:
+            folder_choice = query.replace("open folder", "").replace("open directory", "").strip("?,.! ")
+            
+            if not folder_choice:
+                speak("Which folder would you like me to open, sir?")
+                print("Listening for folder name...")
+                folder_choice = takeCommand().strip("?,.! ")
+            
+            folder_vault = {
+                "my life": r"C:\Users\Ultimate\OneDrive\Desktop\my_life",
+                "nand 2 tetris": r"C:\Users\Ultimate\OneDrive\Desktop\my_life\projects\nand2tetris",
+                "downloads": r"C:\Users\Ultimate\Downloads",
+                "desktop": r"C:\Users\Deniz\Desktop",
+                "project files": r"C:\Users\Deniz\Documents\Projects"
+            }
+            
+            if folder_choice in folder_vault:
+                target_dir = folder_vault[folder_choice]
+                if os.path.exists(target_dir):
+                    speak(f"Opening the {folder_choice} directory now, sir.")
+                    os.startfile(target_dir)
+                else:
+                    speak(f"The path for {folder_choice} is registered, but the directory doesn't exist at that location.")
+            elif folder_choice == "none":
+                speak("Folder request canceled.")
+            else:
+                speak(f"I don't have a registered path for a folder named {folder_choice}, sir.")
+            continue
+
+        # --- COMMAND: STRICT PRODUCTION REPOSITORY DEPLOYMENT ---
+        elif "git commit" in query or "backup code" in query or "push repository" in query:
+            import subprocess
+            
+            # Isolate your spoken words for the commit description
+            commit_msg = query.replace("git commit", "").replace("backup code", "").replace("push repository", "").strip("?,.! ")
+            
+            # Interactive check if you forgot to speak a message on the first try
+            if not commit_msg:
+                speak("Mainframe repository sync initialized. What is the commit message, sir?")
+                print("Listening for commit message...")
+                commit_msg = takeCommand().strip("?,.! ")
+                if commit_msg == "none" or not commit_msg:
+                    speak("Repository sync aborted. Commit message missing.")
+                    continue
+            
+            try:
+                # 1. git add .
+                speak("Staging all local modifications.")
+                subprocess.run(["git", "add", "."], capture_output=True, text=True, check=True)
+                
+                # 2. git commit -m "Message"
+                speak("Registering structural commit payload.")
+                formatted_msg = commit_msg.capitalize()
+                commit_res = subprocess.run(["git", "commit", "-m", formatted_msg], capture_output=True, text=True, check=True)
+                print(commit_res.stdout)
+                
+                # 3. git push -u origin main
+                speak("Pushing package payload upstream to origin main, sir.")
+                push_res = subprocess.run(["git", "push", "-u", "origin", "main"], capture_output=True, text=True, check=True)
+                print(push_res.stdout)
+                
+                speak("Repository sync complete. Code successfully deployed to production branch main.")
+                
+            except subprocess.CalledProcessError as e:
+                speak("Git automation sequence failed. Check your console logs for details.")
+                print(f"Git Automation Error:\nSTDOUT: {e.stdout}\nSTDERR: {e.stderr}")
+            except FileNotFoundError:
+                speak("Git execution binary not discovered on system path environmental variables.")
+            continue
+
+        
+
+        elif "read my notes" in query or "display logs" in query or "display log" in query:
+            if os.path.exists("notes.txt"):
+                try:
+                    with open("notes.txt", "r") as f:
+                        lines = f.readlines()
+                    
+                    if not lines:
+                        speak("The local log file is currently empty, sir.")
+                    else:
+                        speak(f"Accessing data files. You have {len(lines)} entries logged. Reading them back now.")
+                        for line in lines:
+                            print(line.strip())
+                            clean_line = line.split("]")[-1].strip()
+                            speak(clean_line)
+                except Exception as e:
+                    speak("An error occurred while reading the logs.")
+                    print(f"Read Notes Error: {e}")
+            else:
+                speak("No note file found on this local drive yet, sir.")
+            continue
+
+        elif "status report" in query or "system status" in query:
+            import psutil
+            cpu = psutil.cpu_percent()
+            ram = psutil.virtual_memory().percent
+            battery = psutil.sensors_battery()
+            bat_pct = battery.percent if battery else 100
+            
+            report = f"Mainframe diagnostic complete, Sir. Central processing load is at {int(cpu)} percent. Memory volatility is at {int(ram)} percent. Power grid storage stands at {bat_pct} percent capacity."
+            print(report)
+            speak(report)
             continue
 
         elif "temperature in" in query or "weather in" in query or "check the weather" in query:
@@ -314,95 +534,11 @@ def Take_query():
             speak("I am Jarvis, your desktop assistant.")
             continue
 
-# --- ADVANCED MULTI-RING J.A.R.V.I.S. HUD ---
-class JarvisHUD:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("J.A.R.V.I.S. Mainframe Core")
-        self.root.geometry("400x450")
-        self.root.configure(bg="#01050d")
-
-        self.status_label = tk.Label(root, text="INITIALIZING...", font=("Courier", 12, "bold"), fg="#00f0ff", bg="#01050d")
-        self.status_label.pack(pady=15)
-
-        self.canvas = tk.Canvas(root, width=360, height=360, bg="#01050d", highlightthickness=0)
-        self.canvas.pack()
-
-        self.angle_fast = 0
-        self.angle_slow = 0
-        self.is_speaking = False
-        self.pulse_scale = 1.0
-        self.pulse_dir = 1
-        
-        self.animate()
-
-    def set_speaking(self, state):
-        self.is_speaking = state
-        self.set_status("JARVIS TALKING..." if state else "SYSTEM ONLINE")
-
-    def set_status(self, text):
-        self.status_label.config(text=text, fg="#00f0ff" if "TALKING" in text or "ONLINE" in text else "#008ca3")
-
-    def animate(self):
-        self.canvas.delete("hud_elements")
-        cx, cy = 180, 180 
-        
-        if self.is_speaking:
-            # Subtle micro-pulse when speaking (keeps sizing steady but alive)
-            self.pulse_scale += 0.004 * self.pulse_dir
-            if self.pulse_scale > 1.02 or self.pulse_scale < 0.98:
-                self.pulse_dir *= -1
-            # Brighter neon colors to represent speaking state
-            bright_color = "#00f0ff"  
-            dim_color = "#00abc2"
-            # Keeps the exact same slow rotation speeds as the idle state
-            self.angle_fast = (self.angle_fast + 2) % 360
-            self.angle_slow = (self.angle_slow - 0.5) % 360
-        else:
-            # Standard calm idle pulse
-            self.pulse_scale += 0.002 * self.pulse_dir
-            if self.pulse_scale > 1.01 or self.pulse_scale < 0.99:
-                self.pulse_dir *= -1
-            bright_color = "#00b2cc"  
-            dim_color = "#004b57"
-            self.angle_fast = (self.angle_fast + 2) % 360
-            self.angle_slow = (self.angle_slow - 0.5) % 360
-
-        # Layer 1: Large Outer Ring
-        r1 = 130 * self.pulse_scale
-        self.canvas.create_oval(cx-r1, cy-r1, cx+r1, cy+r1, outline=dim_color, width=1, dash=(5, 15), tags="hud_elements")
-        self.canvas.create_arc(cx-r1, cy-r1, cx+r1, cy+r1, start=self.angle_slow, extent=120, style="arc", outline=bright_color, width=2, tags="hud_elements")
-        self.canvas.create_arc(cx-r1, cy-r1, cx+r1, cy+r1, start=self.angle_slow+180, extent=60, style="arc", outline=bright_color, width=2, tags="hud_elements")
-
-        # Layer 2: Middle Thick Fragmented Ring
-        r2 = 105 * self.pulse_scale
-        self.canvas.create_arc(cx-r2, cy-r2, cx+r2, cy+r2, start=self.angle_fast, extent=220, style="arc", outline=bright_color, width=3, tags="hud_elements")
-        self.canvas.create_arc(cx-r2, cy-r2, cx+r2, cy+r2, start=self.angle_fast+260, extent=40, style="arc", outline=dim_color, width=2, tags="hud_elements")
-
-        # Layer 3: Target Indicator Dot Matrix
-        r3 = 85 * self.pulse_scale
-        self.canvas.create_oval(cx-r3, cy-r3, cx+r3, cy+r3, outline=bright_color, width=1, dash=(2, 4), tags="hud_elements")
-
-        # Layer 4: Counter-Rotating Tracking Border
-        r4 = 65 * self.pulse_scale
-        self.canvas.create_arc(cx-r4, cy-r4, cx+r4, cy+r4, start=-self.angle_fast, extent=90, style="arc", outline=bright_color, width=2, tags="hud_elements")
-        self.canvas.create_arc(cx-r4, cy-r4, cx+r4, cy+r4, start=-self.angle_fast+180, extent=90, style="arc", outline=bright_color, width=2, tags="hud_elements")
-
-        # Layer 5: Typography Boundary Ring
-        r5 = 50
-        self.canvas.create_oval(cx-r5, cy-r5, cx+r5, cy+r5, outline=dim_color, width=1, tags="hud_elements")
-
-        # Central Text Anchor
-        text_color = "#ffffff" if self.is_speaking else "#00f0ff"
-        self.canvas.create_text(cx, cy, text="J.A.R.V.I.S.", fill=text_color, font=("Courier", 13, "bold"), tags="hud_elements")
-
-        self.root.after(33, self.animate)
 
 if __name__ == "__main__":
     root = tk.Tk()
     hud_ui = JarvisHUD(root)
 
-    # Launching main query loops via dedicated thread worker to keep interface responsive
     threading.Thread(target=Take_query, daemon=True).start()
     
     root.mainloop()
